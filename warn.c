@@ -1,4 +1,8 @@
+
+#define WRT_ERR 1 /* error occurred writing to pipe */
+
 #define MAX_LEN 513 // max message length. 512 + terminator 
+
 #include<unistd.h>
 #include<stdio.h>
 #include<signal.h>
@@ -47,16 +51,22 @@ int main (int argc, char *argv[]) {
         /* input check loop */
         while (1) {
 
+            /* check if there is user input to process */
             if (msg) {
-                signal(SIGINT, SIG_IGN);
-                printf("Interrup received -- Enter new string:");
+                signal(SIGINT, SIG_IGN); // No further interrupts until current input is processed 
+                //----- HERE put a signal to the child to cease furthing printing 
+                printf("Interrupt received -- Enter new string:");
+
+                /* read the user input and write to the pipe */
                 fgets(print_string, MAX_LEN, stdin); 
                 if (write(wtr, print_string, MAX_LEN) == -1) {
-                    printf("error writing to pipe\n");
-                    exit(3);
+                    fprintf(stderr, "error writing to pipe\n");
+                    exit(WRT_ERR);
                 }                  
-                kill(c_pid, SIGFPE); // child should read from pipe and print the string
-                // writeMsg(next_string, wtr)
+
+                // signal the child to read from the pipe and continue operations */ 
+                kill(c_pid, SIGFPE); 
+                /* reset parent state and continue loop */
                 msg = 0;
                 signal(SIGINT, parentHandler);
             }
@@ -104,6 +114,7 @@ void placeholder() {
 void alrm() {
 }
 
+/* tells parent to process new input */
 void parentHandler() {
     signal(SIGINT, SIG_IGN);
     msg = 1;
