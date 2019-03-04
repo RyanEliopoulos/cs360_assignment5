@@ -1,5 +1,6 @@
 
 #define WRT_ERR 1 /* error occurred writing to pipe */
+#define RD_ERR 2  /* error reading from the pipe */
 
 #define MAX_LEN 513 // max message length. 512 + terminator 
 
@@ -9,12 +10,17 @@
 #include<stdlib.h>
 
 /* global signaling variables */
-int msg = 0;  // Used by both parent and child
-int msg_sent = 0; // Used only by child
+int msg = 0;  /* used by both parent and child */
+              /* parent: New input to process? */
+              /* child: parent will be writing, cease printing */
 
-void parentHandler();
-void placeholder(); // currently a debug fnx for the child process
-void alrm();
+int done = 0; /* child process var. if 1, parent finished writing to pipe */
+
+void parentHandler(); /* flips msg flag indicating new input to process */
+void childHandlerBlock(); /* flips msg flag. Pauses printing until new string received */
+void childHandlerRead(); // currently a debug fnx for the child process
+
+void alrm(); /* cuz we need a fnx using signal and alarm. Does nothing */
 
 int main (int argc, char *argv[]) {
 
@@ -55,6 +61,7 @@ int main (int argc, char *argv[]) {
             if (msg) {
                 signal(SIGINT, SIG_IGN); // No further interrupts until current input is processed 
                 //----- HERE put a signal to the child to cease furthing printing 
+                kill(c_pid, SIGUSR1);
                 printf("Interrupt received -- Enter new string:");
 
                 /* read the user input and write to the pipe */
@@ -87,27 +94,43 @@ int main (int argc, char *argv[]) {
         /* 2: stderr        */
         /* 3: rdr           */
 
-        printf("ever?\n");   
+        int delay = 2;
         signal(SIGINT, SIG_IGN);
-        signal(SIGFPE, placeholder); /* debug just to read and print */
         signal(SIGALRM, alrm);
+
+        signal(SIGUSR1, childHandlerBlock);
+        signal(SIGFPE, childHandlerRead); /* debug just to read and print */
+
         while (1) {
-            alarm(1);
+
+            if (!msg) printf("%s", print_string);
+
+            if (msg && done) {
+                /* read in new string */
+                if (read(rdr, print_string, MAX_LEN) == -1) {
+                    fprintf(stderr, "Error reading from the pipe");
+                    exit(RD_ERR);
+                }
+                msg = 0;
+                done = 0;
+            }
+            alarm(delay);
             pause();
             alarm(0);             
-            //printf("alive\n");
         }
     }
 }
 
-void placeholder() {
-
+void childHandlerRead() {
+    /*
     char str[MAX_LEN];
     if (read(3, str, MAX_LEN) == -1) {
         printf("error reading form pipe\n");
         exit(3);
     } 
     printf("string: <%s>\n", str);
+    */
+    done = 1;
 }
 
 /* simply satisfies arg2 of signal() */
@@ -120,4 +143,8 @@ void parentHandler() {
     msg = 1;
 }
 
-
+/* prevents child from writing */
+/* when parent is processing input */
+void childHandlerBlock() {
+    msg = 1;
+}
