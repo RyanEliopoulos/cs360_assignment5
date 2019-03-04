@@ -95,6 +95,7 @@ int main (int argc, char *argv[]) {
         /* 3: rdr           */
 
         int delay = 2;
+        msg = 1; /* prevents printing until first user-input string */
         signal(SIGINT, SIG_IGN);
         signal(SIGALRM, alrm);
 
