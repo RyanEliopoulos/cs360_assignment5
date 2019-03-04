@@ -38,7 +38,7 @@ int main (int argc, char *argv[]) {
     /* 3: rdr           */
     /* 4: wtr           */
    
-    char print_string[MAX_LEN] = "Default message";  /* stores text entered after keyboard interrupt */
+    char print_string[MAX_LEN] = "Default message\n";  /* stores text entered after keyboard interrupt */
 
     int c_pid = fork();
     if (c_pid) {
@@ -98,8 +98,8 @@ int main (int argc, char *argv[]) {
         signal(SIGINT, SIG_IGN);
         signal(SIGALRM, alrm);
 
-        signal(SIGUSR1, childHandlerBlock);
-        signal(SIGFPE, childHandlerRead); /* debug just to read and print */
+        signal(SIGUSR1, childHandlerBlock); /* cease printing while parent processes new input */
+        signal(SIGFPE, childHandlerRead); /* read from pipe and resume printing new string */
 
         while (1) {
 
@@ -107,6 +107,10 @@ int main (int argc, char *argv[]) {
 
             if (msg && done) {
                 /* read in new string */
+                //--------------
+                /* this needs to be replaced with a function */
+                /* that uses sscanf checking for optional delay */
+                /* or the exit string */
                 if (read(rdr, print_string, MAX_LEN) == -1) {
                     fprintf(stderr, "Error reading from the pipe");
                     exit(RD_ERR);
