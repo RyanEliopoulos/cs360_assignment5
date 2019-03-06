@@ -22,6 +22,7 @@ int done = 0; /* child process var. if 1, parent finished writing to pipe */
 void parsePipe(int, int *, char[]); /* used by child process for new strings. Checks for updates to delay setting */
 void parentProcessInput(char *);
 void parentHandler(); /* flips msg flag indicating new input to process */
+void childProcessInput(int, int*, char[]);
 void childHandlerBlock(); /* flips msg flag. Pauses printing until new string received */
 void childHandlerRead(); // currently a debug fnx for the child process
 
@@ -76,14 +77,15 @@ int main (int argc, char *argv[]) {
                     kill(c_pid, SIGKILL);
                     exit(WRT_ERR);
                 }                  
-
+                // signal the child to read from the pipe */
+                kill(c_pid, SIGFPE); 
+                /* check if it was the exit signal */
                 if (!strcmp("exit\n", print_string)) {
                     /* child will parse this and know to exit */
+                    printf("got the exit signal, mang\n");
                     wait(NULL);
                     exit(0);
                 }
-                // signal the child to read from the pipe and continue operations */ 
-                kill(c_pid, SIGFPE); 
                 /* reset parent state and continue loop */
                 msg = 0;
                 signal(SIGINT, parentHandler);
@@ -121,6 +123,13 @@ int main (int argc, char *argv[]) {
 
             if (msg && done) {
 
+                /* check message */
+                childProcessInput(rdr, &delay, print_string);
+                if (!strcmp("exit", print_string)) {
+                    printf("Exit signal received. Terminating..\n");
+                    exit(0);    
+                }
+
                 /* read in new string */
                 //if (parsePipe(rdr, &delay, print_string)) { // Rets 0 if only updating the delay
                     //if (!strcmp("exit\n", print_string)) {
@@ -128,13 +137,10 @@ int main (int argc, char *argv[]) {
                         //printf("Received exit signal. Terminating..\n");
                         //exit(0);
                     //}
+                    /* put child filter here */
                     /* reset signaling variables */
-                    if (read(rdr, print_string, MAX_LEN) == -1) {
-                        printf("uh oh\n");
-                        exit(RD_ERR);
-                    }
-                    msg = 0;
-                    done = 0;
+                msg = 0;
+                done = 0;
                 //}
             }
             alarm(delay);
@@ -186,6 +192,49 @@ void parsePipe(int fd, int *delay, char print_string[]) {
 
     /* No integer at all so accept as a single string */
     strcpy(print_string, string_candidate);
+}
+
+
+void childProcessInput(int fd, int *delay, char print_string[]) {
+
+    /* read data from pipe */
+    char temp_string[MAX_LEN]; 
+    if (read(fd, temp_string, MAX_LEN) == -1) {
+        fprintf(stderr, "error reading from pipe\n"); 
+        exit(WRT_ERR); 
+    } 
+    
+    /* check for special cases */
+    if (!strcmp("exit\n", temp_string)) {
+        printf("Exit signal received. Terminating..\n");
+        exit(0);
+    }
+
+    /* special case: since sscanf doesn't treat whitespace like it deserves */
+    if (!strcmp("\n", temp_string)) {
+        strcpy(print_string, "\n");
+        return;
+    }
+    
+    /* pipe didn't contain a special case */   
+
+    int temp_delay;  
+    char scan_string[MAX_LEN];
+    int ret = sscanf(temp_string, "%d %s", &temp_delay, scan_string);
+       
+    if (ret == 2) {
+        /* there is a new delay time and string */
+        *delay = temp_delay;
+
+        /* update print_string but exclude the integer */  
+        int i = 0;
+        while ( isdigit(scan_string[i]) || isspace(scan_string[i++]) )
+        strcpy(print_string, scan_string + --i);
+    }
+    else {
+        /* a standalone integer is treated simply as a string */
+        strcpy(print_string, temp_string);   
+    }
 }
 
 /* strips leading whitespace characters    */
