@@ -104,7 +104,6 @@ int main (int argc, char *argv[]) {
                 /* reset parent state and continue loop */
                 msg = 0;
                 signal(SIGINT, parentHandler);
-                printf("message sent\n");
             }
             alarm(1);
             pause();
