@@ -8,6 +8,9 @@
 #include<stdio.h>
 #include<signal.h>
 #include<stdlib.h>
+#include<string.h>
+#include<ctype.h>
+#include<sys/wait.h>
 
 /* global signaling variables */
 int msg = 0;  /* used by both parent and child */
@@ -16,6 +19,8 @@ int msg = 0;  /* used by both parent and child */
 
 int done = 0; /* child process var. if 1, parent finished writing to pipe */
 
+void parsePipe(int, int *, char[]); /* used by child process for new strings. Checks for updates to delay setting */
+void parentProcessInput(char *);
 void parentHandler(); /* flips msg flag indicating new input to process */
 void childHandlerBlock(); /* flips msg flag. Pauses printing until new string received */
 void childHandlerRead(); // currently a debug fnx for the child process
@@ -60,17 +65,23 @@ int main (int argc, char *argv[]) {
             /* check if there is user input to process */
             if (msg) {
                 signal(SIGINT, SIG_IGN); // No further interrupts until current input is processed 
-                //----- HERE put a signal to the child to cease furthing printing 
-                kill(c_pid, SIGUSR1);
-                printf("Interrupt received -- Enter new string:");
+                kill(c_pid, SIGUSR1); /* initial signal to child. Prevents further printing */
+                printf("Interrupt received -- Enter new message:");
 
-                /* read the user input and write to the pipe */
-                fgets(print_string, MAX_LEN, stdin); 
-                if (write(wtr, print_string, MAX_LEN) == -1) {
+                /* read input into print_string */
+                /* transform if necessary       */
+                parentProcessInput(print_string);
+                if (write(wtr, print_string, MAX_LEN) == -1) {  
                     fprintf(stderr, "error writing to pipe\n");
+                    kill(c_pid, SIGKILL);
                     exit(WRT_ERR);
                 }                  
 
+                if (!strcmp("exit\n", print_string)) {
+                    /* child will parse this and know to exit */
+                    wait(NULL);
+                    exit(0);
+                }
                 // signal the child to read from the pipe and continue operations */ 
                 kill(c_pid, SIGFPE); 
                 /* reset parent state and continue loop */
@@ -103,21 +114,28 @@ int main (int argc, char *argv[]) {
         signal(SIGFPE, childHandlerRead); /* read from pipe and resume printing new string */
 
         while (1) {
-
-            if (!msg) printf("%s", print_string);
+            if (!msg) {
+                printf("%s", print_string);
+                fflush(stdout);
+            }
 
             if (msg && done) {
+
                 /* read in new string */
-                //--------------
-                /* this needs to be replaced with a function */
-                /* that uses sscanf checking for optional delay */
-                /* or the exit string */
-                if (read(rdr, print_string, MAX_LEN) == -1) {
-                    fprintf(stderr, "Error reading from the pipe");
-                    exit(RD_ERR);
-                }
-                msg = 0;
-                done = 0;
+                //if (parsePipe(rdr, &delay, print_string)) { // Rets 0 if only updating the delay
+                    //if (!strcmp("exit\n", print_string)) {
+                        //close(rdr);
+                        //printf("Received exit signal. Terminating..\n");
+                        //exit(0);
+                    //}
+                    /* reset signaling variables */
+                    if (read(rdr, print_string, MAX_LEN) == -1) {
+                        printf("uh oh\n");
+                        exit(RD_ERR);
+                    }
+                    msg = 0;
+                    done = 0;
+                //}
             }
             alarm(delay);
             pause();
@@ -126,17 +144,73 @@ int main (int argc, char *argv[]) {
     }
 }
 
-void childHandlerRead() {
-    /*
-    char str[MAX_LEN];
-    if (read(3, str, MAX_LEN) == -1) {
-        printf("error reading form pipe\n");
-        exit(3);
+
+/* turns pipe contents into a string */
+/* updates delay value, if present */
+void parsePipe(int fd, int *delay, char print_string[]) {
+
+    char string_candidate[MAX_LEN]; /* temp var for checking incoming content */
+    /* read string from the pipe */
+    if (read(fd, string_candidate, MAX_LEN) == -1) {
+        fprintf(stderr, "Error reading from the pipe");
+        exit(RD_ERR);
+    }
+    printf("<%s>\n", string_candidate);
+    // Remove leading whitespace
+    //lstrip(string_candidate);
+
+
+    
+    /* evaluate string contents */
+    int delay_candidate;  /* storage for potential new delay setting */
+
+    /* check for a new delay setting and new string */ 
+    int ret = sscanf(print_string, "%d %s", &delay_candidate, print_string);
+    //int ret = sscanf(print_string, "%d %[A-Z,a-z,0-9, ]", &delay_candidate, string_candidate);
+    printf("ret is: %d\n", ret);
+    if (ret == 2) {
+        *delay = delay_candidate;
+
+        // need to remove the integer value from the input string 
+        //int i = 0;
+        //while (
+
+        strcpy(print_string, string_candidate);
+        return;
     } 
-    printf("string: <%s>\n", str);
-    */
-    done = 1;
+    if (ret == 1) {
+        /* only a new delay was present */
+        *delay = delay_candidate;
+        return;
+    }
+
+    /* No integer at all so accept as a single string */
+    strcpy(print_string, string_candidate);
 }
+
+/* strips leading whitespace characters    */
+/* or, if line is only whitespace, subs in */
+/* a single newline character              */
+void parentProcessInput(char print_string[]) {
+    
+    /* get user input */
+    fgets(print_string, MAX_LEN, stdin);
+
+    /* strip leading whitespace */
+    int i = 0;
+    while(isspace(print_string[i++]) && i < strlen(print_string)) 
+
+    if (i > strlen(print_string)) {
+        /* the input string is entirely newline chars */
+        strcpy(print_string, "\n");
+        return;
+    }
+
+    /* there is at least one non-whitespace char at i-1 */
+    /* shift string forward from there */
+    strcpy(print_string, print_string + --i);
+}
+
 
 /* simply satisfies arg2 of signal() */
 void alrm() {
@@ -149,7 +223,13 @@ void parentHandler() {
 }
 
 /* prevents child from writing */
-/* when parent is processing input */
 void childHandlerBlock() {
     msg = 1;
 }
+
+/* flags pipe as having content */
+void childHandlerRead() {
+    done = 1;
+}
+
+
