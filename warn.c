@@ -19,17 +19,31 @@ int msg = 0;  /* used by both parent and child */
 
 int done = 0; /* child process var. if 1, parent finished writing to pipe */
 
-void parsePipe(int, int *, char[]); /* used by child process for new strings. Checks for updates to delay setting */
+/* processes user input before sending to child */
+/* input of only whitespace is converted to \n  */
+/* leading white space is removed               */
 void parentProcessInput(char *);
-void parentHandler(); /* flips msg flag indicating new input to process */
+
+/* flips msg flag indicating new input to process */
+void parentHandler(); 
+
+/* reads from pipe, decides what to do */
 void childProcessInput(int, int*, char[]);
-void childHandlerBlock(); /* flips msg flag. Pauses printing until new string received */
-void childHandlerRead(); // currently a debug fnx for the child process
 
-void alrm(); /* cuz we need a fnx using signal and alarm. Does nothing */
+/* flips msg flag. Pauses printing until new string received */
+void childHandlerBlock(); 
 
+/* currently a debug fnx for the child process */
+void childHandlerRead(); 
+
+/* cuz we need a fnx using signal and alarm. Does nothing */
+void alrm(); 
+
+
+/******   Program Begins ********/
 int main (int argc, char *argv[]) {
 
+    /* prep for fork */
     int fd[2];
     int wtr, rdr;
 
@@ -65,24 +79,24 @@ int main (int argc, char *argv[]) {
 
             /* check if there is user input to process */
             if (msg) {
-                signal(SIGINT, SIG_IGN); // No further interrupts until current input is processed 
-                kill(c_pid, SIGUSR1); /* initial signal to child. Prevents further printing */
-                printf("Interrupt received -- Enter new message:");
 
-                /* read input into print_string */
-                /* transform if necessary       */
+                signal(SIGINT, SIG_IGN); /* No further interrupts until current input is processed */
+                kill(c_pid, SIGUSR1);    /* initial signal to child. Prevents further printing */
+                printf("Interrupt received -- Enter new message:");
                 parentProcessInput(print_string);
+
+                /* send string to the child */
                 if (write(wtr, print_string, MAX_LEN) == -1) {  
                     fprintf(stderr, "error writing to pipe\n");
                     kill(c_pid, SIGKILL);
                     exit(WRT_ERR);
                 }                  
-                // signal the child to read from the pipe */
+                /* signal the child to read from the pipe */
                 kill(c_pid, SIGFPE); 
-                /* check if it was the exit signal */
+
+                /* Now check if what was just sent was the exit signal */
                 if (!strcmp("exit\n", print_string)) {
                     /* child will parse this and know to exit */
-                    printf("got the exit signal, mang\n");
                     wait(NULL);
                     exit(0);
                 }
@@ -117,81 +131,23 @@ int main (int argc, char *argv[]) {
 
         while (1) {
             if (!msg) {
-                printf("%s", print_string);
+                printf("%s\n", print_string);
                 fflush(stdout);
             }
 
             if (msg && done) {
-
                 /* check message */
                 childProcessInput(rdr, &delay, print_string);
-                if (!strcmp("exit", print_string)) {
-                    printf("Exit signal received. Terminating..\n");
-                    exit(0);    
-                }
-
-                /* read in new string */
-                //if (parsePipe(rdr, &delay, print_string)) { // Rets 0 if only updating the delay
-                    //if (!strcmp("exit\n", print_string)) {
-                        //close(rdr);
-                        //printf("Received exit signal. Terminating..\n");
-                        //exit(0);
-                    //}
-                    /* put child filter here */
-                    /* reset signaling variables */
+                
+                /* reset state for next loop */
                 msg = 0;
                 done = 0;
-                //}
             }
             alarm(delay);
             pause();
             alarm(0);             
         }
     }
-}
-
-
-/* turns pipe contents into a string */
-/* updates delay value, if present */
-void parsePipe(int fd, int *delay, char print_string[]) {
-
-    char string_candidate[MAX_LEN]; /* temp var for checking incoming content */
-    /* read string from the pipe */
-    if (read(fd, string_candidate, MAX_LEN) == -1) {
-        fprintf(stderr, "Error reading from the pipe");
-        exit(RD_ERR);
-    }
-    printf("<%s>\n", string_candidate);
-    // Remove leading whitespace
-    //lstrip(string_candidate);
-
-
-    
-    /* evaluate string contents */
-    int delay_candidate;  /* storage for potential new delay setting */
-
-    /* check for a new delay setting and new string */ 
-    int ret = sscanf(print_string, "%d %s", &delay_candidate, print_string);
-    //int ret = sscanf(print_string, "%d %[A-Z,a-z,0-9, ]", &delay_candidate, string_candidate);
-    printf("ret is: %d\n", ret);
-    if (ret == 2) {
-        *delay = delay_candidate;
-
-        // need to remove the integer value from the input string 
-        //int i = 0;
-        //while (
-
-        strcpy(print_string, string_candidate);
-        return;
-    } 
-    if (ret == 1) {
-        /* only a new delay was present */
-        *delay = delay_candidate;
-        return;
-    }
-
-    /* No integer at all so accept as a single string */
-    strcpy(print_string, string_candidate);
 }
 
 
@@ -217,11 +173,12 @@ void childProcessInput(int fd, int *delay, char print_string[]) {
     }
     
     /* pipe didn't contain a special case */   
-
+    printf("temp string is :%s\n", temp_string);
     int temp_delay;  
     char scan_string[MAX_LEN];
     int ret = sscanf(temp_string, "%d %s", &temp_delay, scan_string);
-       
+    printf("ret is:%d\n", ret);   
+    printf("now temp string is: %s\n", temp_string);
     if (ret == 2) {
         /* there is a new delay time and string */
         *delay = temp_delay;
@@ -229,17 +186,18 @@ void childProcessInput(int fd, int *delay, char print_string[]) {
         /* update print_string but exclude the integer */  
         int i = 0;
         while ( isdigit(scan_string[i]) || isspace(scan_string[i++]) )
+        printf("scan_string is:%s\n", scan_string);
+        
         strcpy(print_string, scan_string + --i);
+        printf("print_string is %s\n", print_string);
     }
     else {
         /* a standalone integer is treated simply as a string */
-        strcpy(print_string, temp_string);   
+        /* use sscanf so all processed strings lack a terminating newline */
+        sscanf(temp_string, "%s", print_string);
     }
 }
 
-/* strips leading whitespace characters    */
-/* or, if line is only whitespace, subs in */
-/* a single newline character              */
 void parentProcessInput(char print_string[]) {
     
     /* get user input */
@@ -249,8 +207,8 @@ void parentProcessInput(char print_string[]) {
     int i = 0;
     while(isspace(print_string[i++]) && i < strlen(print_string)) 
 
+    /* check if it was solely whitespace */
     if (i > strlen(print_string)) {
-        /* the input string is entirely newline chars */
         strcpy(print_string, "\n");
         return;
     }
