@@ -103,6 +103,7 @@ int main (int argc, char *argv[]) {
                 /* reset parent state and continue loop */
                 msg = 0;
                 signal(SIGINT, parentHandler);
+                printf("message sent\n");
             }
             alarm(1);
             pause();
@@ -168,34 +169,65 @@ void childProcessInput(int fd, int *delay, char print_string[]) {
 
     /* special case: since sscanf doesn't treat whitespace like it deserves */
     if (!strcmp("\n", temp_string)) {
-        strcpy(print_string, "\n");
+        strcpy(print_string, "");
         return;
     }
-    
-    /* pipe didn't contain a special case */   
-    printf("temp string is :%s\n", temp_string);
-    int temp_delay;  
-    char scan_string[MAX_LEN];
-    int ret = sscanf(temp_string, "%d %s", &temp_delay, scan_string);
-    printf("ret is:%d\n", ret);   
-    printf("now temp string is: %s\n", temp_string);
-    if (ret == 2) {
-        /* there is a new delay time and string */
-        *delay = temp_delay;
 
-        /* update print_string but exclude the integer */  
-        int i = 0;
-        while ( isdigit(scan_string[i]) || isspace(scan_string[i++]) )
-        printf("scan_string is:%s\n", scan_string);
-        
-        strcpy(print_string, scan_string + --i);
-        printf("print_string is %s\n", print_string);
+    /* screen for leading floating point number that might mess up sscanf %d */ 
+    int garb1, garb2;
+    char c;
+    int ret = sscanf(temp_string, "%d %[.] %d", &garb1, &c, &garb2); 
+
+
+    if (ret == 3) {
+        /* leading number is considered a floating point */ 
+        strcpy(print_string, temp_string); 
     }
     else {
-        /* a standalone integer is treated simply as a string */
-        /* use sscanf so all processed strings lack a terminating newline */
-        sscanf(temp_string, "%s", print_string);
+
+        /* pipe didn't contain a special case */   
+        printf("temp string is :%s\n", temp_string);
+        int temp_delay;  
+        char scan_string[MAX_LEN];
+        ret = sscanf(temp_string, "%d %s", &temp_delay, scan_string);
+        printf("ret is:%d\n", ret);   
+        printf("now temp string is: %s\n", temp_string);
+        if (ret == 2) {
+            printf("ok, here..\n");
+            /* check if there is any whitespace following the integer */
+            /* if not, the integer is part of a larger string and doesn't count */
+
+            /* find integer end */
+            int i = 0;
+            while (isdigit(temp_string[i])) i++;  /* get past the integer */
+            if (isspace(temp_string[i])) {  /* The integer is a dictinct unit */
+
+                /* there is a new delay time and string */
+                *delay = temp_delay;
+                while (isspace(temp_string[i])) i++;  /* now get past the whitespace */
+    
+
+                printf("i is %d\n", i);
+                printf("temp_string is:%s\n", temp_string);
+        
+                strcpy(print_string, temp_string + i);
+                printf("print_string is %s\n", print_string);
+            }
+            else {
+                /* the integer was only a substring and thus doesn't qualify */
+                strcpy(print_string, temp_string);
+            }
+        }
+        else {
+            /* a standalone integer is treated simply as a string */
+            strcpy(print_string, temp_string);
+        }
     }
+    /* remove trailing newline to match sscanf results */
+    if (strlen(print_string) < MAX_LEN) {
+        print_string[strlen(print_string)-1] = '\0';
+    }
+ 
 }
 
 void parentProcessInput(char print_string[]) {
