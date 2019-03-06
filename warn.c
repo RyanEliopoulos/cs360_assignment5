@@ -28,6 +28,7 @@ void parentProcessInput(char *);
 void parentHandler(); 
 
 /* reads from pipe, decides what to do */
+/* majority of child logic resides here */
 void childProcessInput(int, int*, char[]);
 
 /* flips msg flag. Pauses printing until new string received */
@@ -186,14 +187,12 @@ void childProcessInput(int fd, int *delay, char print_string[]) {
     else {
 
         /* pipe didn't contain a special case */   
-        printf("temp string is :%s\n", temp_string);
+        /* analyze for delay modification */
         int temp_delay;  
         char scan_string[MAX_LEN];
         ret = sscanf(temp_string, "%d %s", &temp_delay, scan_string);
-        printf("ret is:%d\n", ret);   
-        printf("now temp string is: %s\n", temp_string);
+
         if (ret == 2) {
-            printf("ok, here..\n");
             /* check if there is any whitespace following the integer */
             /* if not, the integer is part of a larger string and doesn't count */
 
@@ -205,13 +204,7 @@ void childProcessInput(int fd, int *delay, char print_string[]) {
                 /* there is a new delay time and string */
                 *delay = temp_delay;
                 while (isspace(temp_string[i])) i++;  /* now get past the whitespace */
-    
-
-                printf("i is %d\n", i);
-                printf("temp_string is:%s\n", temp_string);
-        
                 strcpy(print_string, temp_string + i);
-                printf("print_string is %s\n", print_string);
             }
             else {
                 /* the integer was only a substring and thus doesn't qualify */
