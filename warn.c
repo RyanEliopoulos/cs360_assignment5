@@ -12,7 +12,14 @@
 #include<ctype.h>
 #include<sys/wait.h>
 
-void genericProcess(int *, char[]);
+
+/* generalized string processing function */
+/* wrapped by parent and child specific logic */
+
+/* return value is meant for the child only          */
+/* if 1, childProcessInput is meant to replace       */
+/* the current string with the new pipe-provided one */
+int genericProcess(int *, char[]);
 
 /* global signaling variables */
 int msg = 0;  /* used by both parent and child */
@@ -29,8 +36,7 @@ int parentProcessInput(char *);
 /* flips msg flag indicating new input to process */
 void parentHandler(); 
 
-/* reads from pipe, decides what to do */
-/* majority of child logic resides here */
+/* reads from pipe, relies upon genericProcess */
 void childProcessInput(int, int*, char[]);
 
 /* flips msg flag. Pauses printing until new string received */
@@ -135,7 +141,7 @@ int main (int argc, char *argv[]) {
 
         while (1) {
             if (!msg) {
-                printf("%s\n", print_string);
+                printf("%s", print_string);
                 fflush(stdout);
             }
 
@@ -158,8 +164,7 @@ int main (int argc, char *argv[]) {
 }
 
 
-
-void genericProcess(int *delay, char print_string[]) {
+int genericProcess(int *delay, char print_string[]) {
 
     printf("generic is getting: <%s>\n", print_string);
     char temp_string[MAX_LEN];
@@ -173,6 +178,7 @@ void genericProcess(int *delay, char print_string[]) {
     if (ret == 3) {
         /* leading number is considered a floating point */ 
         strcpy(print_string, temp_string); 
+        return 1;
     }
     else {
 
@@ -188,26 +194,36 @@ void genericProcess(int *delay, char print_string[]) {
 
             /* find integer end */
             int i = 0;
+            /* handle possible negative sign check for negative sign */
+            if (temp_string[i] == '-') i++;
             while (isdigit(temp_string[i])) i++;  /* get past the integer */
+            printf("core dump before here?\n");
             if (isspace(temp_string[i])) {  /* The integer is a dictinct unit */
 
                 /* there is a new delay time and string */
-                *delay = temp_delay;
+                *delay = abs(temp_delay);
                 while (isspace(temp_string[i])) i++;  /* now get past the whitespace */
                 strcpy(print_string, temp_string + i);
+                return 1;
             }
             else {
                 /* the integer was only a substring and thus doesn't qualify */
                 strcpy(print_string, temp_string);
+                return 1;
             }
         }
-        else {
+        else if (ret == 1) {
             /* a standalone integer. We simply change the delay time */
-            //strcpy(print_string, temp_string);
-            *delay = temp_delay;
+            *delay = abs(temp_delay);
+            return 0;
         }
     }
+
+    /* making it here means the info from the pipe was */
+    /* neither special nor involved number shenanigans */
+    /* The child is clear to copy the string.          */
     printf("in generic. String is: <%s>\n", temp_string);
+    return 1;
 }
 
 void childProcessInput(int fd, int *delay, char print_string[]) {
@@ -218,73 +234,24 @@ void childProcessInput(int fd, int *delay, char print_string[]) {
         fprintf(stderr, "error reading from pipe\n"); 
         exit(WRT_ERR); 
     } 
-    
-    /* check for special cases */
+
+    /* special case: since sscanf doesn't treat whitespace like it deserves */
+    if (!strcmp("\n", temp_string)) {
+        strcpy(print_string, "\n");
+        return;
+    }
+   
+    /* check if there is a new string */ 
+    if (genericProcess(delay, temp_string)) {
+        printf("it was affirmative\n");
+        strcpy(print_string, temp_string);
+    }
+
+    /* check if the string was an exit signal */
     if (!strcmp("exit\n", temp_string)) {
         printf("Exit signal received. Terminating..\n");
         exit(0);
     }
-
-    /* special case: since sscanf doesn't treat whitespace like it deserves */
-    if (!strcmp("\n", temp_string)) {
-        strcpy(print_string, "");
-        return;
-    }
-
-    /* screen for leading floating point number that might mess up sscanf %d */ 
-    int garb1, garb2;
-    char c;
-    int ret = sscanf(temp_string, "%d %[.] %d", &garb1, &c, &garb2); 
-
-
-    if (ret == 3) {
-        /* leading number is considered a floating point */ 
-        strcpy(print_string, temp_string); 
-    }
-    else {
-
-        /* pipe didn't contain a special case */   
-        /* analyze for delay modification */
-        int temp_delay;  
-        char scan_string[MAX_LEN];
-        ret = sscanf(temp_string, "%d %s", &temp_delay, scan_string);
-
-        if (ret == 2) {
-            /* check if there is any whitespace following the integer */
-            /* if not, the integer is part of a larger string and doesn't count */
-
-            /* find integer end */
-            int i = 0;
-            while (isdigit(temp_string[i])) i++;  /* get past the integer */
-            if (isspace(temp_string[i])) {  /* The integer is a dictinct unit */
-
-                /* there is a new delay time and string */
-                *delay = temp_delay;
-                while (isspace(temp_string[i])) i++;  /* now get past the whitespace */
-                strcpy(print_string, temp_string + i);
-            }
-            else {
-                /* the integer was only a substring and thus doesn't qualify */
-                strcpy(print_string, temp_string);
-            }
-        }
-        else {
-            /* a standalone integer. We simply change the delay time */
-            //strcpy(print_string, temp_string);
-            *delay = temp_delay;
-        }
-    }
-    /* remove trailing newline to match sscanf results */
-    if (strlen(print_string) < MAX_LEN) {
-
-        /* but only if it is a new string */
-        /* hacky fix. Was misguided in my integer interpretation */
-        /* initially counted standalone int as a string */
-        if (print_string[strlen(print_string)-1] == '\n') {
-            print_string[strlen(print_string)-1] = '\0';
-        }
-    }
- 
 }
 
 /* returns 1 if exit signal received */
