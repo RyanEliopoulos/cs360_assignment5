@@ -105,7 +105,6 @@ int main (int argc, char *argv[]) {
 
                 /* Now check if what was just sent was the exit signal */
                 if (exit_flag) {
-                    printf("exit signal received (parent)\n");
                     /* child will parse this and know to exit */
                     wait(NULL);
                     exit(0);
@@ -166,7 +165,6 @@ int main (int argc, char *argv[]) {
 
 int genericProcess(int *delay, char print_string[]) {
 
-    printf("generic is getting: <%s>\n", print_string);
     char temp_string[MAX_LEN];
     strcpy(temp_string, print_string);
 
@@ -187,7 +185,6 @@ int genericProcess(int *delay, char print_string[]) {
         int temp_delay;  
         char scan_string[MAX_LEN];
         ret = sscanf(temp_string, "%d %s", &temp_delay, scan_string);
-        printf("ret is %d\n", ret);
         if (ret == 2) {
             /* check if there is any whitespace following the integer */
             /* if not, the integer is part of a larger string and doesn't count */
@@ -197,7 +194,6 @@ int genericProcess(int *delay, char print_string[]) {
             /* handle possible negative sign check for negative sign */
             if (temp_string[i] == '-') i++;
             while (isdigit(temp_string[i])) i++;  /* get past the integer */
-            printf("core dump before here?\n");
             if (isspace(temp_string[i])) {  /* The integer is a dictinct unit */
 
                 /* there is a new delay time and string */
@@ -222,7 +218,6 @@ int genericProcess(int *delay, char print_string[]) {
     /* making it here means the info from the pipe was */
     /* neither special nor involved number shenanigans */
     /* The child is clear to copy the string.          */
-    printf("in generic. String is: <%s>\n", temp_string);
     return 1;
 }
 
@@ -243,7 +238,6 @@ void childProcessInput(int fd, int *delay, char print_string[]) {
    
     /* check if there is a new string */ 
     if (genericProcess(delay, temp_string)) {
-        printf("it was affirmative\n");
         strcpy(print_string, temp_string);
     }
 
@@ -280,7 +274,6 @@ int parentProcessInput(char print_string[]) {
     strcpy(temp_string, print_string);
 
     genericProcess(&temp_delay, temp_string);
-    printf("parent process sees:<%s>\n", temp_string);
     /* signal exit command, if present */
     if (!strcmp("exit\n", temp_string)) return 1;
     return 0;
