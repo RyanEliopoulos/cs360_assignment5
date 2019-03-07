@@ -143,6 +143,9 @@ int main (int argc, char *argv[]) {
                 /* reset state for next loop */
                 msg = 0;
                 done = 0;
+
+                /* ensure delay isn't an illegal value */
+                delay = (delay < 1) ? 1 : delay;
             }
             alarm(delay);
             pause();
@@ -211,13 +214,20 @@ void childProcessInput(int fd, int *delay, char print_string[]) {
             }
         }
         else {
-            /* a standalone integer is treated simply as a string */
-            strcpy(print_string, temp_string);
+            /* a standalone integer. We simply change the delay time */
+            //strcpy(print_string, temp_string);
+            *delay = temp_delay;
         }
     }
     /* remove trailing newline to match sscanf results */
     if (strlen(print_string) < MAX_LEN) {
-        print_string[strlen(print_string)-1] = '\0';
+
+        /* but only if it is a new string */
+        /* hacky fix. Was misguided in my integer interpretation */
+        /* initially counted standalone int as a string */
+        if (print_string[strlen(print_string)-1] == '\n') {
+            print_string[strlen(print_string)-1] = '\0';
+        }
     }
  
 }
