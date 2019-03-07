@@ -12,6 +12,8 @@
 #include<ctype.h>
 #include<sys/wait.h>
 
+void genericProcess(int *, char[]);
+
 /* global signaling variables */
 int msg = 0;  /* used by both parent and child */
               /* parent: New input to process? */
@@ -22,7 +24,7 @@ int done = 0; /* child process var. if 1, parent finished writing to pipe */
 /* processes user input before sending to child */
 /* input of only whitespace is converted to \n  */
 /* leading white space is removed               */
-void parentProcessInput(char *);
+int parentProcessInput(char *);
 
 /* flips msg flag indicating new input to process */
 void parentHandler(); 
@@ -84,7 +86,7 @@ int main (int argc, char *argv[]) {
                 signal(SIGINT, SIG_IGN); /* No further interrupts until current input is processed */
                 kill(c_pid, SIGUSR1);    /* initial signal to child. Prevents further printing */
                 printf("Interrupt received -- Enter new message:");
-                parentProcessInput(print_string);
+                int exit_flag = parentProcessInput(print_string);
 
                 /* send string to the child */
                 if (write(wtr, print_string, MAX_LEN) == -1) {  
@@ -96,7 +98,8 @@ int main (int argc, char *argv[]) {
                 kill(c_pid, SIGFPE); 
 
                 /* Now check if what was just sent was the exit signal */
-                if (!strcmp("exit\n", print_string)) {
+                if (exit_flag) {
+                    printf("exit signal received (parent)\n");
                     /* child will parse this and know to exit */
                     wait(NULL);
                     exit(0);
@@ -154,6 +157,58 @@ int main (int argc, char *argv[]) {
     }
 }
 
+
+
+void genericProcess(int *delay, char print_string[]) {
+
+    printf("generic is getting: <%s>\n", print_string);
+    char temp_string[MAX_LEN];
+    strcpy(temp_string, print_string);
+
+    /* screen for leading floating point number that might mess up sscanf %d */ 
+    int garb1, garb2;
+    char c;
+    int ret = sscanf(temp_string, "%d %[.] %d", &garb1, &c, &garb2); 
+
+    if (ret == 3) {
+        /* leading number is considered a floating point */ 
+        strcpy(print_string, temp_string); 
+    }
+    else {
+
+        /* pipe didn't contain a special case */   
+        /* analyze for delay modification */
+        int temp_delay;  
+        char scan_string[MAX_LEN];
+        ret = sscanf(temp_string, "%d %s", &temp_delay, scan_string);
+        printf("ret is %d\n", ret);
+        if (ret == 2) {
+            /* check if there is any whitespace following the integer */
+            /* if not, the integer is part of a larger string and doesn't count */
+
+            /* find integer end */
+            int i = 0;
+            while (isdigit(temp_string[i])) i++;  /* get past the integer */
+            if (isspace(temp_string[i])) {  /* The integer is a dictinct unit */
+
+                /* there is a new delay time and string */
+                *delay = temp_delay;
+                while (isspace(temp_string[i])) i++;  /* now get past the whitespace */
+                strcpy(print_string, temp_string + i);
+            }
+            else {
+                /* the integer was only a substring and thus doesn't qualify */
+                strcpy(print_string, temp_string);
+            }
+        }
+        else {
+            /* a standalone integer. We simply change the delay time */
+            //strcpy(print_string, temp_string);
+            *delay = temp_delay;
+        }
+    }
+    printf("in generic. String is: <%s>\n", temp_string);
+}
 
 void childProcessInput(int fd, int *delay, char print_string[]) {
 
@@ -232,7 +287,8 @@ void childProcessInput(int fd, int *delay, char print_string[]) {
  
 }
 
-void parentProcessInput(char print_string[]) {
+/* returns 1 if exit signal received */
+int parentProcessInput(char print_string[]) {
     
     /* get user input */
     fgets(print_string, MAX_LEN, stdin);
@@ -244,12 +300,23 @@ void parentProcessInput(char print_string[]) {
     /* check if it was solely whitespace */
     if (i > strlen(print_string)) {
         strcpy(print_string, "\n");
-        return;
+        return 0;
     }
 
     /* there is at least one non-whitespace char at i-1 */
     /* shift string forward from there */
     strcpy(print_string, print_string + --i);
+
+    /* now analyze string for exit signal */
+    int temp_delay;  // satisfies process reqs
+    char temp_string[MAX_LEN];
+    strcpy(temp_string, print_string);
+
+    genericProcess(&temp_delay, temp_string);
+    printf("parent process sees:<%s>\n", temp_string);
+    /* signal exit command, if present */
+    if (!strcmp("exit\n", temp_string)) return 1;
+    return 0;
 }
 
 
